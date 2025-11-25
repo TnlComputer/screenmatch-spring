@@ -37,15 +37,25 @@ Incluye integración opcional con **OpenAI API**.
 ## 📁 Estructura del proyecto
 
 src/
+
 └── main/
+
 ├── java/com/aluracursos/screenmatch/
+
 │ ├── controller/ -> Controladores REST
+
 │ ├── model/ -> Entidades
+
 │ ├── repository/ -> Repositorios JPA
+
 │ └── service/ -> Lógica de negocio
+
 └── resources/
+
 ├── application.properties
+
 └── static / templates (si aplica)
+
 
 
 ---
