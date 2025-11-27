@@ -1,8 +1,7 @@
 package com.aluracursos.screenmatch.principal;
 
-import com.aluracursos.screenmatch.model.DatosSerie;
-import com.aluracursos.screenmatch.model.DatosTemporadas;
-import com.aluracursos.screenmatch.model.Serie;
+import com.aluracursos.screenmatch.model.*;
+import com.aluracursos.screenmatch.repository.SerieRepository;
 import com.aluracursos.screenmatch.service.ConsumoAPI;
 import com.aluracursos.screenmatch.service.ConvierteDatos;
 
@@ -17,6 +16,13 @@ public class Principal {
     private final ConsumoAPI consumoApi = new ConsumoAPI();
     private final ConvierteDatos conversor = new ConvierteDatos();
     private List<DatosSerie> datosSeries = new ArrayList<>();
+    private SerieRepository repositorio;
+    private List<Serie> series;
+
+
+    public Principal(SerieRepository repository) {
+        this.repositorio = repository;
+    }
 
     public void muestraElMenu() {
         var opcion = -1;
@@ -26,7 +32,11 @@ public class Principal {
                     1 - Buscar series
                     2 - Buscar episodios
                     3 - Mostrar series buscadas
-                    
+                    4 - Buscar series por tìtulo
+                    5 - Top 5 Mejores series
+                    6 - Buscar Series por Categoría
+                    7 - Filtrar series
+                    ___________________________
                     0 - Salir
                     
                     Ingrese una opcion.
@@ -44,6 +54,18 @@ public class Principal {
                     break;
                 case 3:
                     mostrarSeriesBuscadas();
+                    break;
+                case 4:
+                    mostrarSeriesPorTitulo();
+                    break;
+                case 5:
+                    buscarTop5Series();
+                    break;
+                case 6:
+                    buscarSeriesPorCategoria();
+                    break;
+                case 7:
+                    filtrarSeriesPorTemporadaYEvaluacion();
                     break;
                 case 0:
                     System.out.println("Cerrando la aplicación...");
@@ -66,32 +88,90 @@ public class Principal {
 
     //  busca los datos de toda la temporada
     private void buscarEpisodioPorSerie() {
-        DatosSerie datosSerie = getDatosSerie();
-        List<DatosTemporadas> temporadas = new ArrayList<>();
+        mostrarSeriesBuscadas();
+        System.out.println("Escribe el nombre de la serie, de la cual quieras ver los episodios: ");
+        var nombreSerie = teclado.nextLine();
 
-        for (int i = 1; i <= datosSerie.totalDeTemporadas(); i++) {
-            var json = consumoApi.obtenerDatos(URL_BASE + datosSerie.titulo().replace(" ", "+") + "&Season=" + i + API_KEY);
-            DatosTemporadas datosTemporada = conversor.obtenerDatos(json, DatosTemporadas.class);
-            temporadas.add(datosTemporada);
+        Optional<Serie> serie = series.stream()
+                .filter(s -> s.getTitulo().toLowerCase().contains(nombreSerie.toLowerCase()))
+                .findFirst();
+
+        if (serie.isPresent()) {
+            var serieEncontrada = serie.get();
+
+            List<DatosTemporadas> temporadas = new ArrayList<>();
+
+            for (int i = 1; i <= serieEncontrada.getTotalDeTemporadas(); i++) {
+                var json = consumoApi.obtenerDatos(URL_BASE + serieEncontrada.getTitulo().replace(" ", "+") + "&Season=" + i + API_KEY);
+                DatosTemporadas datosTemporada = conversor.obtenerDatos(json, DatosTemporadas.class);
+                temporadas.add(datosTemporada);
+            }
+            temporadas.forEach(System.out::println);
+
+            List<Episodio> episodios = temporadas.stream()
+                    .flatMap(d -> d.episodios().stream()
+                            .map(e -> new Episodio(d.numero(), e)))
+                    .collect(Collectors.toList());
+            serieEncontrada.setEpisodios(episodios);
+            repositorio.save(serieEncontrada);
         }
-        temporadas.forEach(System.out::println);
     }
 
     private void buscarSerieWeb() {
         DatosSerie datos = getDatosSerie();
-        datosSeries.add(datos);
+        Serie serie = new Serie(datos);
+        repositorio.save(serie);
+        //datosSeries.add(datos);
         System.out.println(datos);
     }
 
     private void mostrarSeriesBuscadas() {
-        List<Serie> series = new ArrayList<>();
-        series = datosSeries.stream()
-                .map(d -> new Serie(d))
-                .collect(Collectors.toList());
+        series = repositorio.findAll();
 
         series.stream()
                 .sorted(Comparator.comparing(Serie::getGenero))
                 .forEach(System.out::println);
+    }
+
+    private void mostrarSeriesPorTitulo(){
+        System.out.println("Escribe el titulo de la serie que deseas buscar: ");
+        var nombreSerie = teclado.nextLine();
+        Optional<Serie> serieBuscada = repositorio.findByTituloContainsIgnoreCase(nombreSerie);
+
+        if (serieBuscada.isPresent()){
+            System.out.println("La serie buscada es: " + serieBuscada.get());
+        }else {
+            System.out.println("Serie no encontrada");
+        }
+
+    }
+
+    private void buscarTop5Series(){
+        List<Serie> topSeries = repositorio.findTop5ByOrderByEvaluacionDesc();
+        topSeries.forEach(s -> System.out.println("Serie: " + s.getTitulo() + " Evaluacion: " + s.getEvaluacion()));
+    }
+
+    private void buscarSeriesPorCategoria() {
+        System.out.println("Escriba el bénero o categoría que desea buscar: ");
+        var genero = teclado.nextLine();
+        var categoria = Categoria.fromEspanol(genero);
+        List<Serie> seriePorCategoria = repositorio.findByGenero(categoria);
+        System.out.println("Las series de la categoría " + genero);
+        seriePorCategoria.forEach(System.out::println);
+    }
+
+    public void filtrarSeriesPorTemporadaYEvaluacion(){
+        System.out.println("¿Filtrar séries con cuántas temporadas? ");
+        var totalTemporadas = teclado.nextInt();
+        teclado.nextLine();
+        System.out.println("¿Como evaluación a partir de cuál valor? ");
+        var evaluacion = teclado.nextDouble();
+        teclado.nextLine();
+//        List<Serie> filtroSeries = repositorio.findByTotalDeTemporadasLessThanEqualAndEvaluacionGreaterThanEqual(totalTemporadas, evaluacion);
+        List<Serie> filtroSeries = repositorio.seriesPorTemporadaYEvaluacion(totalTemporadas, evaluacion);
+        System.out.println("*** Series filtradas ***");
+        filtroSeries.forEach(s ->
+                System.out.println(s.getTitulo() + "  - evaluacion: " + s.getEvaluacion()));
     }
 }
 
